@@ -101,7 +101,6 @@ var Profiler = Obj.extend(Module,
             // 3) The thread actor is attached
             var console = context.isPanelEnabled("console");
             var script = context.isPanelEnabled("script");
-            var enabled = console && script && context.activeThread;
 
             this.profilerEnabled = console && script && context.activeThread;
         }
@@ -144,16 +143,19 @@ var Profiler = Obj.extend(Module,
     onThreadAttached: function(context, reload)
     {
         Trace.sysout("profiler.onThreadAttached; reload: " + reload);
-
         this.setEnabled(context);
+	if (reload && this.isProfiling())
+		this.startProfiling(context);
     },
 
     onThreadDetached: function(context)
     {
         Trace.sysout("profiler.onThreadDetached;");
 
+        // do NOT toggle the global property, or reload will break.
+        // report should only be discarded if persist is off.
         if (this.isProfiling())
-            this.stopProfiling(context, true);
+            this.stopProfiling(context, false);
     },
 
     // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -164,6 +166,7 @@ var Profiler = Obj.extend(Module,
             this.stopProfiling(context);
         else
             this.startProfiling(context);
+        Firebug.chrome.setGlobalAttribute("cmd_firebug_toggleProfiling", "checked", context.profiling ? "true" : "false");
     },
 
     startProfiling: function(context, title)
@@ -171,10 +174,9 @@ var Profiler = Obj.extend(Module,
         if (context.profiling)
             return;
 
+        Trace.sysout("Profiler.startProfiling; context: " + context.getId());
         context.profiling = new ProfilerEngine(context);
         context.profiling.startProfiling();
-
-        Firebug.chrome.setGlobalAttribute("cmd_firebug_toggleProfiling", "checked", "true");
 
         var originalTitle = title;
         var isCustomMessage = !!title;
@@ -194,14 +196,14 @@ var Profiler = Obj.extend(Module,
         if (!context.profiling)
             return;
 
+        Trace.sysout("Profiler.stopProfiling; context: " + context.getId() + " cancelReport: " + cancelReport ? "true" : "false");
         var totalTime = context.profiling.stopProfiling();
 
         // If totalTime != -1 then it contains total time of the profiling session
         // (from start to end of the first executed stack frame).
+	// this may be wrong.  We have to clean up after ourselves.
         if (totalTime == -1)
             return;
-
-        Firebug.chrome.setGlobalAttribute("cmd_firebug_toggleProfiling", "checked", "false");
 
         if (cancelReport)
             delete context.profileRow;
@@ -334,12 +336,16 @@ var Profiler = Obj.extend(Module,
         }
 
         Profiler.startProfiling(context, title);
+        Firebug.chrome.setGlobalAttribute("cmd_firebug_toggleProfiling", "checked", context.profiling ? "true" : "false");
     },
 
     commandLineProfileEnd: function(context)
     {
         if (this.profilerEnabled)
+	{
             this.stopProfiling(context);
+            Firebug.chrome.setGlobalAttribute("cmd_firebug_toggleProfiling", "checked", context.profiling ? "true" : "false");
+        }
     }
 });
 
